@@ -108,6 +108,85 @@ class Phase1Service:
             return Phase1Service.MOTIVATIONAL_QUOTES[hash_value % len(Phase1Service.MOTIVATIONAL_QUOTES)]
     
     @staticmethod
+    def calculate_calories_burned(time_commitment, gear, mission, day_number: int) -> int:
+        """
+        Calculate estimated calories burned for a workout based on parameters.
+        
+        This is a simplified estimation based on:
+        - Time commitment
+        - Equipment type (intensity factor)
+        - Mission type (activity factor)
+        - Day progression (intensity progression)
+        
+        Args:
+            time_commitment: TimeCommitment enum value
+            gear: GearType enum value 
+            mission: MissionType enum value
+            day_number: Day number in the 30-day plan (1-30)
+            
+        Returns:
+            Estimated calories burned as integer
+        """
+        # Base calories per minute for different time commitments (conservative estimate)
+        base_calories_per_minute = {
+            "10 min": 8,      # Light to moderate intensity
+            "20-30 min": 10,  # Moderate intensity
+            "45+ min": 12     # Moderate to high intensity
+        }
+        
+        # Time duration mapping
+        time_minutes = {
+            "10 min": 10,
+            "20-30 min": 25,  # Average of 20-30
+            "45+ min": 45     # Minimum of 45+
+        }
+        
+        # Equipment intensity multipliers
+        gear_multipliers = {
+            "Bodyweight": 1.0,     # Base intensity
+            "Sandbag": 1.2,        # Functional training increase
+            "Dumbbells": 1.15,     # Moderate resistance increase
+            "Full Gym": 1.3        # Maximum equipment variety
+        }
+        
+        # Mission type intensity multipliers
+        mission_multipliers = {
+            "Lose Fat": 1.2,           # Higher cardio component
+            "Build Strength": 1.0,     # Base strength training
+            "Move Pain-Free": 0.8,     # Lower intensity, rehabilitation focus
+            "Tactical Readiness": 1.25 # High intensity, functional training
+        }
+        
+        # Progressive intensity based on day (weeks 1-5)
+        week_number = (day_number - 1) // 7 + 1
+        progression_multipliers = {
+            1: 0.85,  # Week 1: Easier start
+            2: 0.95,  # Week 2: Building up
+            3: 1.0,   # Week 3: Standard intensity
+            4: 1.1,   # Week 4: Increased intensity
+            5: 1.15   # Week 5: Peak intensity
+        }
+        
+        # Get base values
+        time_str = time_commitment.value
+        base_cal_per_min = base_calories_per_minute.get(time_str, 10)
+        duration = time_minutes.get(time_str, 25)
+        
+        # Calculate base calories
+        base_calories = base_cal_per_min * duration
+        
+        # Apply multipliers
+        gear_factor = gear_multipliers.get(gear.value, 1.0)
+        mission_factor = mission_multipliers.get(mission.value, 1.0)
+        progression_factor = progression_multipliers.get(week_number, 1.0)
+        
+        # Final calculation
+        total_calories = base_calories * gear_factor * mission_factor * progression_factor
+        
+        # Round to nearest 5 calories for cleaner numbers
+        return round(total_calories / 5) * 5
+    
+    @staticmethod
     async def generate_workout_plan(request: WorkoutPlanRequest) -> WorkoutPlanResponse:
         """
         Generate a 30-day workout plan using OpenAI with a simplified format.
@@ -388,6 +467,14 @@ class Phase1Service:
                         # Provide a fallback YouTube search URL
                         exercise_name = exercise_data.get("name", request.mission.value)
                         exercise_data["video_url"] = f"https://www.youtube.com/results?search_query={exercise_name.replace(' ', '+')}+{request.mission.value.replace(' ', '+')}+{request.gear.value.replace(' ', '+')}"
+                    
+                    # Calculate and add calories burned for workout days
+                    exercise_data["calories_burned"] = Phase1Service.calculate_calories_burned(
+                        time_commitment=request.time_commitment,
+                        gear=request.gear,
+                        mission=request.mission,
+                        day_number=day_number
+                    )
                         
                 else:
                     # Validate rest day fields
@@ -406,6 +493,7 @@ class Phase1Service:
                     exercise_data["description"] = None
                     exercise_data["rest"] = None
                     exercise_data["video_url"] = None  # No video for rest days
+                    exercise_data["calories_burned"] = None  # No calories burned on rest days
                 
                 logger.info(f"Successfully generated exercise for day {day_number}")
                 return exercise_data
@@ -435,7 +523,13 @@ class Phase1Service:
                             "rest": "60 seconds between sets",
                             "motivational_quote": Phase1Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": None
+                            "video_url": None,
+                            "calories_burned": Phase1Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     elif "cardio" in focus.lower():
                         fallback_exercise = {
@@ -447,7 +541,13 @@ class Phase1Service:
                             "rest": "1 minute between sets",
                             "motivational_quote": Phase1Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": None
+                            "video_url": None,
+                            "calories_burned": Phase1Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     else:
                         fallback_exercise = {
@@ -459,7 +559,13 @@ class Phase1Service:
                             "rest": "45 seconds between exercises",
                             "motivational_quote": Phase1Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": None
+                            "video_url": None,
+                            "calories_burned": Phase1Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     
                     # Try to find a video for the fallback exercise
@@ -489,7 +595,8 @@ class Phase1Service:
                         "rest": None,
                         "motivational_quote": daily_rest_quote,
                         "is_workout_day": False,
-                        "video_url": None
+                        "video_url": None,
+                        "calories_burned": None
                     }
         
         # Process days in parallel batches to optimize API usage
@@ -545,9 +652,15 @@ class Phase1Service:
                             "reps": "10-12",
                             "description": "Choose an exercise that matches your fitness level and available equipment.",
                             "rest": "60 seconds",
-                            "motivational_quote": Phase1Service.get_daily_quote(day_number, is_rest_day=False),
+                            "motivational_quote": Phase1Service.get_daily_quote(day, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query={request.mission.value.replace(' ', '+')}+{request.gear.value}+workout"
+                            "video_url": f"https://www.youtube.com/results?search_query={request.mission.value.replace(' ', '+')}+{request.gear.value}+workout",
+                            "calories_burned": Phase1Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day
+                            )
                         }
                     else:
                         placeholder = {
@@ -559,7 +672,8 @@ class Phase1Service:
                             "rest": None,
                             "motivational_quote": Phase1Service.get_daily_quote(day, is_rest_day=True),
                             "is_workout_day": False,
-                            "video_url": None
+                            "video_url": None,
+                            "calories_burned": None
                         }
                     all_exercises.append(placeholder)
             

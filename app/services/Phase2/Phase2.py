@@ -114,6 +114,85 @@ class Phase2Service:
             return Phase2Service.MOTIVATIONAL_QUOTES[hash_value % len(Phase2Service.MOTIVATIONAL_QUOTES)]
     
     @staticmethod
+    def calculate_calories_burned(time_commitment, gear, mission, day_number: int) -> int:
+        """
+        Calculate estimated calories burned for a Phase 2 workout based on parameters.
+        
+        This calculation uses higher intensity multipliers compared to Phase 1 due to:
+        - More advanced exercise selection
+        - Higher training volumes
+        - More challenging movement patterns
+        - Increased training density
+        
+        Args:
+            time_commitment: TimeCommitment enum value
+            gear: GearType enum value 
+            mission: MissionType enum value
+            day_number: Day number in the 30-day plan (1-30)
+            
+        Returns:
+            Estimated calories burned as integer
+        """
+        # Base calories per minute for Phase 2 (higher than Phase 1)
+        base_calories_per_minute = {
+            "10 min": 10,     # Higher intensity, advanced movements
+            "20-30 min": 12,  # Moderate to high intensity
+            "45+ min": 14     # High intensity with advanced techniques
+        }
+        
+        # Time duration mapping
+        time_minutes = {
+            "10 min": 10,
+            "20-30 min": 25,  # Average of 20-30
+            "45+ min": 45     # Minimum of 45+
+        }
+        
+        # Equipment intensity multipliers (higher than Phase 1)
+        gear_multipliers = {
+            "Bodyweight": 1.1,     # Advanced bodyweight movements
+            "Sandbag": 1.3,        # Complex functional training
+            "Dumbbells": 1.25,     # Advanced resistance patterns
+            "Full Gym": 1.4        # Maximum equipment with advanced techniques
+        }
+        
+        # Mission type intensity multipliers (higher than Phase 1)
+        mission_multipliers = {
+            "Lose Fat": 1.3,           # Higher intensity cardio and circuits
+            "Build Strength": 1.15,    # Heavy compound movements
+            "Move Pain-Free": 0.9,     # Moderate intensity, movement focused
+            "Tactical Readiness": 1.35 # Very high intensity, functional training
+        }
+        
+        # Progressive intensity based on day (weeks 1-5) - more aggressive progression
+        week_number = (day_number - 1) // 7 + 1
+        progression_multipliers = {
+            1: 0.9,   # Week 1: Building up from Phase 1
+            2: 1.0,   # Week 2: Standard Phase 2 intensity
+            3: 1.1,   # Week 3: Increased intensity
+            4: 1.2,   # Week 4: High intensity
+            5: 1.25   # Week 5: Peak Phase 2 intensity
+        }
+        
+        # Get base values
+        time_str = time_commitment.value
+        base_cal_per_min = base_calories_per_minute.get(time_str, 12)
+        duration = time_minutes.get(time_str, 25)
+        
+        # Calculate base calories
+        base_calories = base_cal_per_min * duration
+        
+        # Apply multipliers
+        gear_factor = gear_multipliers.get(gear.value, 1.0)
+        mission_factor = mission_multipliers.get(mission.value, 1.0)
+        progression_factor = progression_multipliers.get(week_number, 1.0)
+        
+        # Final calculation with Phase 2 intensity boost
+        total_calories = base_calories * gear_factor * mission_factor * progression_factor * 1.15
+        
+        # Round to nearest 5 calories for cleaner numbers
+        return round(total_calories / 5) * 5
+    
+    @staticmethod
     async def generate_workout_plan(request: WorkoutPlanRequest) -> WorkoutPlanResponse:
         """
         Generate a more challenging 30-day workout plan using OpenAI.
@@ -387,6 +466,14 @@ class Phase2Service:
                         # Provide a fallback YouTube search URL
                         exercise_name = exercise_data.get("name", request.mission.value)
                         exercise_data["video_url"] = f"https://www.youtube.com/results?search_query={exercise_name.replace(' ', '+')}+{request.mission.value.replace(' ', '+')}+{request.gear.value.replace(' ', '+')}"
+                    
+                    # Calculate and add calories burned for workout days
+                    exercise_data["calories_burned"] = Phase2Service.calculate_calories_burned(
+                        time_commitment=request.time_commitment,
+                        gear=request.gear,
+                        mission=request.mission,
+                        day_number=day_number
+                    )
                         
                 else:
                     # Validate rest day fields
@@ -405,6 +492,7 @@ class Phase2Service:
                     exercise_data["description"] = None
                     exercise_data["rest"] = None
                     exercise_data["video_url"] = None  # No video for rest days
+                    exercise_data["calories_burned"] = None  # No calories burned on rest days
                 
                 logger.info(f"Successfully generated Phase 2 exercise for day {day_number}")
                 return exercise_data
@@ -434,7 +522,13 @@ class Phase2Service:
                             "rest": "45 seconds between sets",  # Less rest than Phase 1
                             "motivational_quote": Phase2Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query=advanced+{focus.replace(' ', '+')}+{request.gear.value}+{request.mission.value}+workout"
+                            "video_url": f"https://www.youtube.com/results?search_query=advanced+{focus.replace(' ', '+')}+{request.gear.value}+{request.mission.value}+workout",
+                            "calories_burned": Phase2Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     elif "interval" in focus.lower() or "intensity" in focus.lower():
                         fallback_exercise = {
@@ -446,7 +540,13 @@ class Phase2Service:
                             "rest": "45 seconds between rounds",  # Less rest than Phase 1
                             "motivational_quote": Phase2Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query=advanced+interval+training+{request.gear.value}+{request.mission.value}"
+                            "video_url": f"https://www.youtube.com/results?search_query=advanced+interval+training+{request.gear.value}+{request.mission.value}",
+                            "calories_burned": Phase2Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     else:
                         fallback_exercise = {
@@ -458,7 +558,13 @@ class Phase2Service:
                             "rest": "30 seconds between exercises",
                             "motivational_quote": Phase2Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query=advanced+circuit+training+{request.gear.value}+{request.mission.value}"
+                            "video_url": f"https://www.youtube.com/results?search_query=advanced+circuit+training+{request.gear.value}+{request.mission.value}",
+                            "calories_burned": Phase2Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     
                     # Try to find a video for the fallback exercise
@@ -481,7 +587,8 @@ class Phase2Service:
                     return {
                         "day": day_number,
                         "motivational_quote": daily_rest_quote,
-                        "is_workout_day": False
+                        "is_workout_day": False,
+                        "calories_burned": None
                     }
         
         # Process days in parallel batches to optimize API usage

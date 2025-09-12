@@ -107,6 +107,85 @@ class Phase3Service:
             return Phase3Service.MOTIVATIONAL_QUOTES[hash_value % len(Phase3Service.MOTIVATIONAL_QUOTES)]
     
     @staticmethod
+    def calculate_calories_burned(time_commitment, gear, mission, day_number: int) -> int:
+        """
+        Calculate estimated calories burned for a Phase 3 workout based on parameters.
+        
+        This calculation uses the highest intensity multipliers for elite-level training:
+        - Maximum intensity exercise selection
+        - Elite-level training volumes and density
+        - Complex movement patterns and advanced techniques
+        - Competition-level training demands
+        
+        Args:
+            time_commitment: TimeCommitment enum value
+            gear: GearType enum value 
+            mission: MissionType enum value
+            day_number: Day number in the 30-day plan (1-30)
+            
+        Returns:
+            Estimated calories burned as integer
+        """
+        # Base calories per minute for Phase 3 (highest of all phases)
+        base_calories_per_minute = {
+            "10 min": 12,     # Elite intensity, maximum efficiency
+            "20-30 min": 15,  # High to very high intensity
+            "45+ min": 18     # Very high intensity with elite techniques
+        }
+        
+        # Time duration mapping
+        time_minutes = {
+            "10 min": 10,
+            "20-30 min": 25,  # Average of 20-30
+            "45+ min": 45     # Minimum of 45+
+        }
+        
+        # Equipment intensity multipliers (highest of all phases)
+        gear_multipliers = {
+            "Bodyweight": 1.2,     # Elite bodyweight movements and plyometrics
+            "Sandbag": 1.4,        # Elite functional and explosive training
+            "Dumbbells": 1.35,     # Elite resistance patterns and complexes
+            "Full Gym": 1.5        # Maximum equipment with elite techniques
+        }
+        
+        # Mission type intensity multipliers (highest of all phases)
+        mission_multipliers = {
+            "Lose Fat": 1.4,           # Very high intensity metabolic training
+            "Build Strength": 1.3,     # Elite strength and power development
+            "Move Pain-Free": 1.0,     # Controlled intensity, movement optimization
+            "Tactical Readiness": 1.45 # Maximum intensity, combat/competition preparation
+        }
+        
+        # Progressive intensity based on day (weeks 1-5) - elite progression
+        week_number = (day_number - 1) // 7 + 1
+        progression_multipliers = {
+            1: 1.0,   # Week 1: Elite baseline intensity
+            2: 1.1,   # Week 2: Increased elite intensity
+            3: 1.2,   # Week 3: High elite intensity
+            4: 1.25,  # Week 4: Peak elite intensity
+            5: 1.3    # Week 5: Maximum elite intensity
+        }
+        
+        # Get base values
+        time_str = time_commitment.value
+        base_cal_per_min = base_calories_per_minute.get(time_str, 15)
+        duration = time_minutes.get(time_str, 25)
+        
+        # Calculate base calories
+        base_calories = base_cal_per_min * duration
+        
+        # Apply multipliers
+        gear_factor = gear_multipliers.get(gear.value, 1.0)
+        mission_factor = mission_multipliers.get(mission.value, 1.0)
+        progression_factor = progression_multipliers.get(week_number, 1.0)
+        
+        # Final calculation with Phase 3 elite intensity boost
+        total_calories = base_calories * gear_factor * mission_factor * progression_factor * 1.25
+        
+        # Round to nearest 5 calories for cleaner numbers
+        return round(total_calories / 5) * 5
+    
+    @staticmethod
     async def generate_workout_plan(request: WorkoutPlanRequest) -> WorkoutPlanResponse:
         """
         Generate a 30-day elite-level workout plan for peak performance using OpenAI.
@@ -411,6 +490,14 @@ class Phase3Service:
                         # Provide a fallback YouTube search URL
                         exercise_name = exercise_data.get("name", request.mission.value)
                         exercise_data["video_url"] = f"https://www.youtube.com/results?search_query={exercise_name.replace(' ', '+')}+{request.mission.value.replace(' ', '+')}+{request.gear.value.replace(' ', '+')}"
+                    
+                    # Calculate and add calories burned for workout days
+                    exercise_data["calories_burned"] = Phase3Service.calculate_calories_burned(
+                        time_commitment=request.time_commitment,
+                        gear=request.gear,
+                        mission=request.mission,
+                        day_number=day_number
+                    )
                         
                 else:
                     # Validate rest day fields
@@ -429,6 +516,7 @@ class Phase3Service:
                     exercise_data["description"] = None
                     exercise_data["rest"] = None
                     exercise_data["video_url"] = None  # No video for rest days
+                    exercise_data["calories_burned"] = None  # No calories burned on rest days
                 
                 logger.info(f"Successfully generated Phase 3 elite exercise for day {day_number}")
                 return exercise_data
@@ -458,7 +546,13 @@ class Phase3Service:
                             "rest": "2-3 minutes for complete power recovery",  # Elite rest periods
                             "motivational_quote": Phase3Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query=elite+{focus.replace(' ', '+')}+{request.gear.value}+{request.mission.value}+training"
+                            "video_url": f"https://www.youtube.com/results?search_query=elite+{focus.replace(' ', '+')}+{request.gear.value}+{request.mission.value}+training",
+                            "calories_burned": Phase3Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     elif "metabolic" in focus.lower() or "conditioning" in focus.lower():
                         fallback_exercise = {
@@ -470,7 +564,13 @@ class Phase3Service:
                             "rest": "90 seconds between rounds for power maintenance",
                             "motivational_quote": Phase3Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query=elite+metabolic+conditioning+{request.gear.value}+{request.mission.value}"
+                            "video_url": f"https://www.youtube.com/results?search_query=elite+metabolic+conditioning+{request.gear.value}+{request.mission.value}",
+                            "calories_burned": Phase3Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     else:
                         fallback_exercise = {
@@ -482,7 +582,13 @@ class Phase3Service:
                             "rest": "120 seconds for optimal power recovery",
                             "motivational_quote": Phase3Service.get_daily_quote(day_number, is_rest_day=False),
                             "is_workout_day": True,
-                            "video_url": f"https://www.youtube.com/results?search_query=elite+performance+training+{request.gear.value}"
+                            "video_url": f"https://www.youtube.com/results?search_query=elite+performance+training+{request.gear.value}",
+                            "calories_burned": Phase3Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day_number
+                            )
                         }
                     
                     # Try to find a video for the fallback exercise
@@ -505,7 +611,8 @@ class Phase3Service:
                     return {
                         "day": day_number,
                         "motivational_quote": daily_rest_quote,
-                        "is_workout_day": False
+                        "is_workout_day": False,
+                        "calories_burned": None
                     }
         
         # Process days in parallel batches to optimize API usage
@@ -562,13 +669,20 @@ class Phase3Service:
                             "description": "Elite training protocol for peak performers. Execute with championship precision and competitive mindset.",
                             "rest": "2-3 minutes for power optimization",  # Elite rest
                             "motivational_quote": Phase3Service.get_daily_quote(day, is_rest_day=False),
-                            "is_workout_day": True
+                            "is_workout_day": True,
+                            "calories_burned": Phase3Service.calculate_calories_burned(
+                                time_commitment=request.time_commitment,
+                                gear=request.gear,
+                                mission=request.mission,
+                                day_number=day
+                            )
                         }
                     else:
                         placeholder = {
                             "day": day,
                             "motivational_quote": Phase3Service.get_daily_quote(day, is_rest_day=True),
-                            "is_workout_day": False
+                            "is_workout_day": False,
+                            "calories_burned": None
                         }
                     all_exercises.append(placeholder)
             

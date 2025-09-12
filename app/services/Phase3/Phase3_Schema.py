@@ -30,6 +30,7 @@ class WorkoutPlanRequest(BaseModel):
     time_commitment: TimeCommitment
     gear: GearType
     squad: Optional[SquadSelection] = None
+    
 
 class WorkoutExercise(BaseModel):
     day: int
@@ -41,6 +42,7 @@ class WorkoutExercise(BaseModel):
     motivational_quote: str
     is_workout_day: bool
     video_url: Optional[str] = None
+    calories_burned: Optional[int] = Field(None, description="Estimated calories burned during the exercise")
 
 class WorkoutPlanResponse(BaseModel):
     workout_plan: List[WorkoutExercise] = []
